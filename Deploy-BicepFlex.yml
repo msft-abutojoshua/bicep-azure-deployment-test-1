@@ -1,0 +1,91 @@
+parameters:
+- name: Name
+  type: string
+
+- name: CostCenter
+  type: string
+
+- name: AzureServiceConnection
+  type: string
+
+- name: AzureLocation
+  type: string
+  default: westus2
+
+- name: Environment
+  type: string
+  default: $(System.StageName)
+
+- name: SupportOwner
+  type: string
+  default: 'DevOps'
+
+# The Bicep Deployment mode is 'Incremental' or 'Complete'
+- name: Mode
+  type: string
+  default: 'Incremental'
+# If you don't check out SharedPipelines to the default location
+- name: SharedPipelinesFolder
+  type: string
+  default: $(Build.SourcesDirectory)/SharedPipelines
+# If you don't check out your repo to the default location
+- name: InfrastructureFolder
+  type: string
+  default: $(Build.SourcesDirectory)/$(Build.Repository.Name)
+# If set, will not overwrite bicepconfig.json
+# Why do we do this? Extremely likely that Developers have copied bicepconfig.json that has linting or incorrect information
+# Linting output can fail builds even if bicep file is correct
+# TL;DR, trust this bicepconfig in this repo by default, much higher possibility that the file in this repo is correct
+- name: OverwriteBicepConfig
+  type: boolean
+  default: true
+
+- name: DebugListDirectories
+  type: boolean
+  default: false
+
+steps:
+  - task: CopyFiles@2
+    displayName: "Copy bicepconfig.json (if necessary)"
+    inputs:
+      SourceFolder: ${{ parameters.SharedPipelinesFolder }}
+      Contents: bicepconfig.json
+      TargetFolder: ${{ parameters.InfrastructureFolder }}
+      OverWrite: ${{ parameters.OverwriteBicepConfig }}
+
+  - ${{ if eq(parameters.DebugListDirectories, true) }}:
+    - pwsh: |
+        Write-Host "Build.SourcesDirectory"
+        Get-ChildItem '$(Build.SourcesDirectory)' | Format-Table LastWriteTime, Name
+        Write-Host "InfrastructureFolder"
+        Get-ChildItem '${{ parameters.InfrastructureFolder }}' | Format-Table LastWriteTime, Name
+        Write-Host "SharedPipelinesFolder"
+        Get-ChildItem '${{ parameters.SharedPipelinesFolder }}' | Format-Table LastWriteTime, Name
+      displayName: "Debug List Directories"
+
+  - template: Install-RequiredModule.yml
+    parameters:
+      # Ensure possible RequiredModules.psd1 is not found
+      RequiredModulesPath: no file
+      RequiredModuleList: |
+        'Metadata'     = '[1.5.0,6.0)'
+        'BicepFlex'    = '[5.2.0,6.0)'
+
+  # The AzurePowershell is required for authentication, but it's inline scripts do not work cross-platform
+  - task: AzurePowershell@5
+    name: DeployBicepFlex
+    displayName: Deploy-BicepFlex
+    inputs:
+      pwsh: true
+      FailOnStandardError: true
+      azureSubscription: ${{ parameters.azureServiceConnection }}
+      workingDirectory: ${{ parameters.InfrastructureFolder }}
+      ScriptPath: ${{ parameters.SharedPipelinesFolder }}/scripts/Deploy-BicepFlex.ps1
+      ScriptArguments:
+        -Location '${{ parameters.AzureLocation }}' `
+        -Environment '${{ parameters.Environment }}' `
+        -Name '${{ parameters.Name }}' `
+        -CostCenter '${{ parameters.CostCenter }}' `
+        -SupportOwner '${{ parameters.SupportOwner }}' `
+        -Mode '${{ parameters.Mode}}'
+      azurePowerShellVersion: LatestVersion

@@ -1,0 +1,13 @@
+- stage: DV1
+    displayName: 'Deploy Infrastructure - DV1'
+    jobs:
+      - job: RunBicepFlex
+        displayName: 'Run Bicep Flex'
+        steps:
+          - checkout: self
+          - checkout: sharedpipelines
+          - template: steps\Deploy-BicepFlex.yml@sharedpipelines
+            parameters:
+              Name: $(projectName)
+              CostCenter: $(costCenter)
+              AzureServiceConnection: sb-azu-dvo-dv1
